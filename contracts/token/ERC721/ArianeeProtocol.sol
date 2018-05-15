@@ -10,7 +10,7 @@ import "./ERC721BasicToken.sol";
  * Moreover, it includes approve all functionality using operator terminology
  * @dev see https://github.com/ethereum/EIPs/blob/master/EIPS/eip-721.md
  */
-contract ERC721Token is ERC721, ERC721BasicToken {
+contract ArianeeProtocol is ERC721, ERC721BasicToken {
   // Token name
   string internal name_;
 
@@ -32,12 +32,18 @@ contract ERC721Token is ERC721, ERC721BasicToken {
   // Optional mapping for token URIs
   mapping(uint256 => string) internal tokenURIs;
 
+  // Mapping from token id to bool as for request as transfer knowing the tokenkey
+  mapping (uint256 => bool) public isTokenRequestable;  
+
+  // Mapping from token id to TokenKey (if requestable)
+  mapping (uint256 => bytes32) public encryptedTokenKey;  
+
   /**
    * @dev Constructor function
    */
-  function ERC721Token(string _name, string _symbol) public {
-    name_ = _name;
-    symbol_ = _symbol;
+  constructor() public {
+    name_ = "Arianee";
+    symbol_ = "SmartAsset";
   }
 
   /**
@@ -77,6 +83,35 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     return ownedTokens[_owner][_index];
   }
 
+  /// @notice Returns a list of all Token IDs assigned to an address.
+  /// @param _owner The owner whose tokens we are interested in.
+  /// @dev This method MUST NEVER be called by smart contract code. First, it's fairly
+  ///  expensive,
+  ///  but it also returns a dynamic array, which is only supported for web3 calls, and
+  ///  not contract-to-contract calls.
+  /*
+  function tokensOfOwner(address _owner) external view returns(string[][] result) {
+      uint256 tokenCount = balanceOf(_owner);
+
+      if (tokenCount == 0) {
+          // Return an empty array
+          return new uint256[](0);
+      } else {
+          //uint256[] memory result = new uint256[](tokenCount);
+          //uint256 resultIndex = 0;
+
+          uint256 tokenId;
+
+          for (tokenId = 0; tokenId < tokenCount; tokenId++) {
+                  result[tokenId]['tokenId'] = tokenOfOwnerByIndex(_owner,tokenId);
+                  result[tokenId]['URI'] = tokenURI(tokenId);
+          }
+
+          return result;
+      }
+  }  
+  */
+  
   /**
    * @dev Gets the total amount of tokens stored by the contract
    * @return uint256 representing the total amount of tokens
@@ -181,5 +216,99 @@ contract ERC721Token is ERC721, ERC721BasicToken {
     allTokensIndex[_tokenId] = 0;
     allTokensIndex[lastToken] = tokenIndex;
   }
+
+  /**
+   * @dev Public function to mint a specific token and assign metadata
+   * @param _for receiver of the token to mint
+   * @param value json metadata (in blockchain for now)
+   */
+  function createFor(address _for, string value) public returns (uint256) {
+    uint256 currentToken = allTokens.length;
+
+    _mint(_for ,currentToken);
+    _setTokenURI(currentToken,value);
+
+    // TODO return false if value not well formatted
+    return currentToken;
+
+  }
+
+
+  /**
+   * @dev Public function to mint a specific token and assign metadata with token for request
+   * @param _for receiver of the token to mint
+   * @param value json metadata (in blockchain for now)
+   */
+  function createForWithToken(address _for, string value, bytes32 _encryptedTokenKey) public returns (uint256) {
+    uint256 currentToken = createFor(_for, value);
+
+    encryptedTokenKey[currentToken] = _encryptedTokenKey;
+    isTokenRequestable[currentToken] = true;
+
+    // TODO return false if value not well formatted
+    return currentToken;
+
+  }
+
+  /**
+   * @dev Public function to mint a specific token for sender and assign metadata
+   * @param value json metadata (in blockchain currently)
+   */
+  function create (string value) public returns (uint256) {
+    return createFor(msg.sender,value);
+  }
+
+  /**
+   * @dev Public function to check if a token is requestable
+   * @param _tokenId uint256 ID of the token to check
+   */
+  function isRequestable(uint256 _tokenId) public view returns (bool) {
+    return isTokenRequestable[_tokenId];
+  }
+
+  /**
+   * @dev Public function to set a token requestable (or not)
+   * @param _tokenId uint256 ID of the token to check
+   * @param _encryptedTokenKey bytes32 representation of keccak256 secretkey
+   * @param _requestable bool to set on or off   
+   */
+  function setRequestable(uint256 _tokenId, bytes32 _encryptedTokenKey, bool _requestable) public onlyOwnerOf(_tokenId) returns (bool) {
+
+    if (_requestable) {
+      encryptedTokenKey[_tokenId] = _encryptedTokenKey;
+      isTokenRequestable[_tokenId] = true;
+    } else {
+      isTokenRequestable[_tokenId] = false;    
+    }
+
+    return true;
+  }  
+
+  /**
+   * @dev Checks if token id is requestable and correct key is given
+   * @param _tokenId uint256 ID of the token to validate
+   */
+  modifier canRequest(uint256 _tokenId, string encryptedKey) {
+    require(isTokenRequestable[_tokenId]&&keccak256(encryptedKey) == encryptedTokenKey[_tokenId]);
+    _;
+  }
+  
+
+  /**
+   * @dev Transfers the ownership of a given token ID to another address
+   * @dev Usage of this method is discouraged, use `safeTransferFrom` whenever possible
+   * @dev Requires the msg sender to have the correct tokenKey and token id is requestable
+   * @param _from current owner of the token
+   * @param _to address to receive the ownership of the given token ID
+   * @param _tokenId uint256 ID of the token to be transferred
+  */
+  function requestFrom(address _from, address _to, uint256 _tokenId, string encryptedKey) public canRequest(_tokenId, encryptedKey) {
+
+    transferFrom_(_from, _to, _tokenId);
+
+  }
+
+
+
 
 }
